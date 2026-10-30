@@ -229,6 +229,7 @@ else()
     set(APP_SRCS
         "btstack_hal_esp32.c"
         "${SHARED_SRC}/apps/bt2usb/app.c"
+        "${SHARED_SRC}/netpad/netpad.c"
     )
     set(APP_INCLUDE_DIR "${SHARED_SRC}/apps/bt2usb")
     set(APP_NEEDS_BTSTACK ON)

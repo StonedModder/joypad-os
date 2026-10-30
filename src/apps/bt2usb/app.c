@@ -15,6 +15,7 @@
 #include "bt/transport/bt_transport.h"
 #include "bt/btstack/btstack_host.h"
 #include "core/services/leds/leds.h"
+#include "netpad/netpad.h"
 
 #include "tusb.h"
 #include "platform/platform.h"
@@ -372,6 +373,7 @@ static void oled_update_display(void) {
 void app_init(void)
 {
     printf("[app:bt2usb] Initializing BT2USB v%s\n", JOYPAD_VERSION);
+    netpad_start();
 #ifdef BTSTACK_USE_ESP32
     printf("[app:bt2usb] ESP32-S3 BLE -> USB HID\n");
     // Init status LED GPIO
