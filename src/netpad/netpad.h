@@ -18,6 +18,10 @@
 
 void netpad_start(void);
 
+/* Run one command line. Shared by the UART reader and the TCP transport so the
+ * two links accept exactly the same verbs. */
+void netpad_handle_command(const char *line);
+
 /* Parse and submit one 16-byte frame. Returns 0 on success. Exposed for tests
  * and for the future Wi-Fi transport, which will call the same path. */
 int netpad_submit_frame(const uint8_t frame[16]);

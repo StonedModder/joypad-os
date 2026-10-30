@@ -230,6 +230,7 @@ else()
         "btstack_hal_esp32.c"
         "${SHARED_SRC}/apps/bt2usb/app.c"
         "${SHARED_SRC}/netpad/netpad.c"
+        "${SHARED_SRC}/netpad/netpad_wifi.c"
     )
     set(APP_INCLUDE_DIR "${SHARED_SRC}/apps/bt2usb")
     set(APP_NEEDS_BTSTACK ON)
@@ -483,6 +484,10 @@ set(ESP_REQUIRES
     esp_driver_spi
     esp_lcd
     esp_driver_uart
+    esp_wifi
+    esp_netif
+    esp_event
+    lwip
     esp_timer
     esp_hw_support
     esp_system

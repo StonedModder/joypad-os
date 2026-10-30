@@ -11,6 +11,7 @@
 #include "core/input_event.h"
 #include "core/router/router.h"
 #include "usb/usbd/usbd.h"
+#include "netpad/netpad_wifi.h"
 
 #if defined(ESP_PLATFORM)
 #include "driver/uart.h"
@@ -123,8 +124,28 @@ static int mode_from_name(const char *v)
 }
 
 /* "GPAD <32 hex>" -> submit */
-static void handle_line(char *line)
+void netpad_handle_command(const char *line)
 {
+    if (strcmp(line, "WIFI?") == 0) {
+        char st[96];
+        netpad_wifi_status(st, sizeof(st));
+        printf("[netpad] wifi: %s\n", st);
+        return;
+    }
+
+    if (strncmp(line, "WIFI ", 5) == 0) {
+        char ssid[33] = {0};
+        char pass[64] = {0};
+        int n = sscanf(line + 5, "%32s %63s", ssid, pass);
+        if (n >= 1) {
+            netpad_wifi_set(ssid, n >= 2 ? pass : "");
+            printf("[netpad] stored Wi-Fi for '%s' — joining\n", ssid);
+        } else {
+            printf("[netpad] usage: WIFI <ssid> <password>\n");
+        }
+        return;
+    }
+
     if (strcmp(line, "MODE?") == 0) {
         printf("[netpad] mode: %s\n", usbd_get_mode_name(usbd_get_mode()));
         return;
@@ -191,7 +212,7 @@ static void netpad_uart_task(void *arg)
             if (c == '\r') continue;
             if (c == '\n') {
                 line[len] = '\0';
-                if (len > 0) handle_line(line);
+                if (len > 0) netpad_handle_command(line);
                 len = 0;
                 continue;
             }
@@ -212,6 +233,7 @@ void netpad_start(void)
     }
     xTaskCreate(netpad_uart_task, "netpad_uart", 4096, NULL, 5, NULL);
     printf("[netpad] injection ready on UART0 — send: GPAD <32 hex chars>\n");
+    netpad_wifi_start();
 #else
     printf("[netpad] no transport on this platform\n");
 #endif
