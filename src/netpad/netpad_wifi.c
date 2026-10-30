@@ -124,6 +124,12 @@ static void serve_client(int fd)
                     printf("[netpad] tcp: %s\n", line);
                 }
                 netpad_handle_command(line);
+                const char *rp = netpad_last_reply();
+                if (rp && *rp) {
+                    char out[200];
+                    int rn = snprintf(out, sizeof(out), "%s\n", rp);
+                    if (rn > 0) send(fd, out, (size_t)rn, 0);
+                }
             }
             len = 0;
             continue;
@@ -155,7 +161,15 @@ static void tcp_task(void *arg)
 
     for (;;) {
         int fd = accept(srv, NULL, NULL);
-        if (fd >= 0) serve_client(fd);
+        if (fd >= 0) {
+            /* Greet on connect: over Wi-Fi this is the only proof the link is
+             * alive, since the rig's log goes to a UART nobody has plugged in. */
+            char hello[96];
+            int hn = snprintf(hello, sizeof(hello), "OK GHOSTPAD %s mode=%s\n",
+                              s_name, usbd_get_mode_name(usbd_get_mode()));
+            if (hn > 0) send(fd, hello, (size_t)hn, 0);
+            serve_client(fd);
+        }
     }
 }
 

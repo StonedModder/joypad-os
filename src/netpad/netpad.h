@@ -25,3 +25,7 @@ void netpad_handle_command(const char *line);
 /* Parse and submit one 16-byte frame. Returns 0 on success. Exposed for tests
  * and for the future Wi-Fi transport, which will call the same path. */
 int netpad_submit_frame(const uint8_t frame[16]);
+
+/* The response line produced by the most recent netpad_handle_command() call.
+ * Empty when the command produced nothing. Never contains a password. */
+const char *netpad_last_reply(void);

@@ -4,6 +4,7 @@
 #include "netpad.h"
 
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <strings.h>
 
@@ -42,6 +43,25 @@
 static uint32_t s_last_buttons;
 static uint8_t s_last_analog[7];
 static uint32_t s_frames;
+
+/* Every command writes one line here. The UART reader prints it; the TCP
+ * transport sends it back to the client. Without this, a rig driven purely over
+ * Wi-Fi is blind: the printf()s go to a cable nobody has plugged in. */
+static char s_reply[192];
+
+const char *netpad_last_reply(void)
+{
+    return s_reply;
+}
+
+static void reply(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(s_reply, sizeof(s_reply), fmt, ap);
+    va_end(ap);
+}
+
 
 static uint32_t map_buttons(uint32_t gp)
 {
@@ -126,10 +146,13 @@ static int mode_from_name(const char *v)
 /* "GPAD <32 hex>" -> submit */
 void netpad_handle_command(const char *line)
 {
+    s_reply[0] = '\0';
+
     if (strcmp(line, "WIFI?") == 0) {
         char st[96];
         netpad_wifi_status(st, sizeof(st));
         printf("[netpad] wifi: %s\n", st);
+        reply("WIFI %s", st);
         return;
     }
 
@@ -140,14 +163,17 @@ void netpad_handle_command(const char *line)
         if (n >= 1) {
             netpad_wifi_set(ssid, n >= 2 ? pass : "");
             printf("[netpad] stored Wi-Fi for '%s' — joining\n", ssid);
+            reply("WIFI %s stored, joining", ssid);
         } else {
             printf("[netpad] usage: WIFI <ssid> <password>\n");
+            reply("ERR usage: WIFI <ssid> <password>");
         }
         return;
     }
 
     if (strcmp(line, "MODE?") == 0) {
         printf("[netpad] mode: %s\n", usbd_get_mode_name(usbd_get_mode()));
+        reply("MODE %s", usbd_get_mode_name(usbd_get_mode()));
         return;
     }
 
@@ -155,6 +181,7 @@ void netpad_handle_command(const char *line)
         int m = mode_from_name(line + 5);
         if (m < 0) {
             printf("[netpad] unknown mode '%s'\n", line + 5);
+            reply("ERR unknown mode '%s'", line + 5);
             return;
         }
         /* Sticky by design (usbd_set_mode saves it), so the identity survives a
@@ -162,6 +189,7 @@ void netpad_handle_command(const char *line)
         printf("[netpad] switching to %s — USB will re-enumerate\n",
                usbd_get_mode_name((usb_output_mode_t)m));
         usbd_set_mode((usb_output_mode_t)m);
+        reply("MODE %s saved, re-enumerating", usbd_get_mode_name((usb_output_mode_t)m));
         return;
     }
 
@@ -170,6 +198,10 @@ void netpad_handle_command(const char *line)
                (unsigned long)s_frames, (unsigned long)s_last_buttons,
                s_last_analog[0], s_last_analog[1], s_last_analog[2],
                s_last_analog[3], s_last_analog[4], s_last_analog[5]);
+        reply("NETPAD frames=%lu buttons=0x%08lX analog=%u,%u,%u,%u,%u,%u",
+              (unsigned long)s_frames, (unsigned long)s_last_buttons,
+              s_last_analog[0], s_last_analog[1], s_last_analog[2],
+              s_last_analog[3], s_last_analog[4], s_last_analog[5]);
         return;
     }
 
@@ -184,6 +216,7 @@ void netpad_handle_command(const char *line)
         int lo = hex_nibble(hex[i * 2 + 1]);
         if (hi < 0 || lo < 0) {
             printf("[netpad] bad hex at byte %d\n", i);
+            reply("ERR bad hex at byte %d", i);
             return;
         }
         frame[i] = (uint8_t)((hi << 4) | lo);
@@ -192,8 +225,11 @@ void netpad_handle_command(const char *line)
     if (netpad_submit_frame(frame) == 0) {
         printf("[netpad] frame %lu buttons=0x%08lX\n",
                (unsigned long)s_frames, (unsigned long)s_last_buttons);
+        reply("OK FRAME %lu buttons=0x%08lX",
+              (unsigned long)s_frames, (unsigned long)s_last_buttons);
     } else {
         printf("[netpad] rejected frame (bad magic)\n");
+        reply("ERR rejected frame (bad magic)");
     }
 }
 
