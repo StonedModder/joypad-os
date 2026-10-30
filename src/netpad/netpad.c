@@ -5,10 +5,12 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 #include "core/buttons.h"
 #include "core/input_event.h"
 #include "core/router/router.h"
+#include "usb/usbd/usbd.h"
 
 #if defined(ESP_PLATFORM)
 #include "driver/uart.h"
@@ -103,9 +105,45 @@ static int hex_nibble(char c)
     return -1;
 }
 
+/* Mode names accepted by "MODE <name>". */
+static int mode_from_name(const char *v)
+{
+    if (!strcasecmp(v, "hid") || !strcasecmp(v, "dinput")) return USB_OUTPUT_MODE_HID;
+    if (!strcasecmp(v, "sinput"))                             return USB_OUTPUT_MODE_SINPUT;
+    if (!strcasecmp(v, "xinput"))                             return USB_OUTPUT_MODE_XINPUT;
+    if (!strcasecmp(v, "ps3"))                                return USB_OUTPUT_MODE_PS3;
+    if (!strcasecmp(v, "ps4") || !strcasecmp(v, "ds4"))       return USB_OUTPUT_MODE_PS4;
+    if (!strcasecmp(v, "switch"))                             return USB_OUTPUT_MODE_SWITCH;
+    if (!strcasecmp(v, "dualsense") || !strcasecmp(v, "ds5")) return USB_OUTPUT_MODE_DUALSENSE;
+    if (!strcasecmp(v, "ps5"))                                return USB_OUTPUT_MODE_PS5;
+    if (!strcasecmp(v, "psclassic"))                          return USB_OUTPUT_MODE_PSCLASSIC;
+    if (!strcasecmp(v, "xbone"))                              return USB_OUTPUT_MODE_XBONE;
+    if (!strcasecmp(v, "xog") || !strcasecmp(v, "xbox_og"))   return USB_OUTPUT_MODE_XBOX_ORIGINAL;
+    return -1;
+}
+
 /* "GPAD <32 hex>" -> submit */
 static void handle_line(char *line)
 {
+    if (strcmp(line, "MODE?") == 0) {
+        printf("[netpad] mode: %s\n", usbd_get_mode_name(usbd_get_mode()));
+        return;
+    }
+
+    if (strncmp(line, "MODE ", 5) == 0) {
+        int m = mode_from_name(line + 5);
+        if (m < 0) {
+            printf("[netpad] unknown mode '%s'\n", line + 5);
+            return;
+        }
+        /* Sticky by design (usbd_set_mode saves it), so the identity survives a
+         * reboot; "MODE xinput" puts it back. */
+        printf("[netpad] switching to %s — USB will re-enumerate\n",
+               usbd_get_mode_name((usb_output_mode_t)m));
+        usbd_set_mode((usb_output_mode_t)m);
+        return;
+    }
+
     if (strncmp(line, "NETPAD?", 7) == 0) {
         printf("[netpad] frames=%lu buttons=0x%08lX analog=%u,%u,%u,%u,%u,%u\n",
                (unsigned long)s_frames, (unsigned long)s_last_buttons,
