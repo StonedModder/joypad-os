@@ -115,6 +115,9 @@ int netpad_submit_frame(const uint8_t frame[16])
     s_frames++;
 
     router_submit_input(&ev);
+
+    /* Mirror to the console-facing sink, if one is configured. */
+    netpad_wifi_sink_publish(frame);
     return 0;
 }
 
@@ -190,6 +193,27 @@ void netpad_handle_command(const char *line)
                usbd_get_mode_name((usb_output_mode_t)m));
         usbd_set_mode((usb_output_mode_t)m);
         reply("MODE %s saved, re-enumerating", usbd_get_mode_name((usb_output_mode_t)m));
+        return;
+    }
+
+    if (strncmp(line, "SINK?", 5) == 0) {
+        char st[160];
+        netpad_wifi_sink_status(st, sizeof(st));
+        printf("[netpad] %s\n", st);
+        reply("%s", st);
+        return;
+    }
+
+    if (strncmp(line, "SINK ", 5) == 0) {
+        if (netpad_wifi_set_sink(line + 5)) {
+            char st[160];
+            netpad_wifi_sink_status(st, sizeof(st));
+            printf("[netpad] %s\n", st);
+            reply("%s", st);
+        } else {
+            printf("[netpad] usage: SINK <ip>[:port] | SINK off\n");
+            reply("ERR usage: SINK <ip>[:port] | SINK off");
+        }
         return;
     }
 

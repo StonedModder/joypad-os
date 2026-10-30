@@ -23,3 +23,11 @@ bool netpad_wifi_set(const char *ssid, const char *pass);
 
 /* One-line status for the WIFI? command. */
 void netpad_wifi_status(char *out, unsigned out_len);
+
+/* Outbound pad sink: stream the same 16-byte frames to a GhostPad listener.
+ * Ghostcontrol's console service binds TCP 6967; "off" stops and sends DISC. */
+bool netpad_wifi_set_sink(const char *host_port);
+void netpad_wifi_sink_status(char *out, unsigned out_len);
+
+/* Called for every accepted frame; mirrored to the sink when it is enabled. */
+void netpad_wifi_sink_publish(const uint8_t frame[16]);

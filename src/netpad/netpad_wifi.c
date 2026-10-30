@@ -19,6 +19,7 @@
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "lwip/sockets.h"
 
 #include "usb/usbd/usbd.h"
@@ -209,6 +210,151 @@ static void udp_task(void *arg)
     }
 }
 
+/* ---- outbound sink ----------------------------------------------------- */
+
+/* The console side (Ghostcontrol's gc_ghostpad.c) is a TCP listener on 6967
+ * that eats 16-byte GPAD packets and releases the pad if none arrive for
+ * 250 ms. Streaming to it avoids the whole USB authentication problem: the
+ * console never has to accept us as a controller. */
+static char s_sink_host[48];
+static uint16_t s_sink_port = 6967;
+static bool s_sink_enabled;
+static SemaphoreHandle_t s_sink_lock;
+static uint8_t s_sink_frame[16];
+static uint32_t s_sink_sent;
+static uint32_t s_sink_errors;
+static int s_sink_fd = -1;
+
+void netpad_wifi_sink_publish(const uint8_t frame[16])
+{
+    if (!s_sink_enabled || !s_sink_lock || !frame) return;
+    if (xSemaphoreTake(s_sink_lock, pdMS_TO_TICKS(20)) != pdTRUE) return;
+    memcpy(s_sink_frame, frame, 16);
+    xSemaphoreGive(s_sink_lock);
+}
+
+bool netpad_wifi_set_sink(const char *arg)
+{
+    if (!arg || !*arg) return false;
+
+    if (!strcasecmp(arg, "off")) {
+        s_sink_enabled = false;
+        if (s_sink_fd >= 0) {
+            /* DISC is a full 16-byte packet, not a bare 4-byte token: the
+             * console reads fixed-size packets, so a short write desyncs it. */
+            uint8_t disc[16] = {0};
+            memcpy(disc, "DISC", 4);
+            send(s_sink_fd, disc, 16, 0);
+            close(s_sink_fd);
+            s_sink_fd = -1;
+        }
+        s_sink_host[0] = '\0';
+        printf("[netpad] sink disabled\n");
+        return true;
+    }
+
+    char host[48];
+    uint16_t port = 6967;
+    const char *colon = strrchr(arg, ':');
+    if (colon) {
+        size_t n = (size_t)(colon - arg);
+        if (n == 0 || n >= sizeof(host)) return false;
+        memcpy(host, arg, n);
+        host[n] = '\0';
+        int p = atoi(colon + 1);
+        if (p <= 0 || p > 65535) return false;
+        port = (uint16_t)p;
+    } else {
+        snprintf(host, sizeof(host), "%s", arg);
+    }
+
+    snprintf(s_sink_host, sizeof(s_sink_host), "%s", host);
+    s_sink_port = port;
+    s_sink_enabled = true;
+    s_sink_sent = 0;
+    s_sink_errors = 0;
+
+    /* Never emit a packet the service would reject: start from a neutral frame
+     * (magic + centred sticks) instead of the zeroed mailbox. */
+    if (s_sink_lock && xSemaphoreTake(s_sink_lock, pdMS_TO_TICKS(50)) == pdTRUE) {
+        memset(s_sink_frame, 0, sizeof(s_sink_frame));
+        s_sink_frame[0] = 'G'; s_sink_frame[1] = 'P';
+        s_sink_frame[2] = 'A'; s_sink_frame[3] = 'D';
+        s_sink_frame[8] = s_sink_frame[9] = 128;
+        s_sink_frame[10] = s_sink_frame[11] = 128;
+        xSemaphoreGive(s_sink_lock);
+    }
+
+    printf("[netpad] sink -> %s:%u\n", s_sink_host, s_sink_port);
+    return true;
+}
+
+void netpad_wifi_sink_status(char *out, unsigned out_len)
+{
+    if (!out || out_len == 0) return;
+    if (!s_sink_enabled) {
+        snprintf(out, out_len, "SINK off");
+        return;
+    }
+    snprintf(out, out_len, "SINK %s:%u %s sent=%lu errors=%lu",
+             s_sink_host, s_sink_port, s_sink_fd >= 0 ? "connected" : "connecting",
+             (unsigned long)s_sink_sent, (unsigned long)s_sink_errors);
+}
+
+static void sink_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        if (!s_sink_enabled) {
+            if (s_sink_fd >= 0) { close(s_sink_fd); s_sink_fd = -1; }
+            vTaskDelay(pdMS_TO_TICKS(200));
+            continue;
+        }
+
+        if (s_sink_fd < 0) {
+            int fd = socket(AF_INET, SOCK_STREAM, 0);
+            if (fd >= 0) {
+                struct sockaddr_in a = {0};
+                a.sin_family = AF_INET;
+                a.sin_port = htons(s_sink_port);
+                a.sin_addr.s_addr = inet_addr(s_sink_host);
+                if (connect(fd, (struct sockaddr *)&a, sizeof(a)) == 0) {
+                    s_sink_fd = fd;
+                    printf("[netpad] sink connected %s:%u\n", s_sink_host, s_sink_port);
+                } else {
+                    close(fd);
+                }
+            }
+            if (s_sink_fd < 0) {
+                s_sink_errors++;
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                continue;
+            }
+        }
+
+        uint8_t frame[16];
+        if (s_sink_lock && xSemaphoreTake(s_sink_lock, pdMS_TO_TICKS(20)) == pdTRUE) {
+            memcpy(frame, s_sink_frame, 16);
+            xSemaphoreGive(s_sink_lock);
+        } else {
+            memset(frame, 0, sizeof(frame));
+            frame[0] = 'G'; frame[1] = 'P'; frame[2] = 'A'; frame[3] = 'D';
+            frame[8] = frame[9] = frame[10] = frame[11] = 128;
+        }
+
+        /* 20 Hz: well inside the service's 250 ms stale window, and cheap. */
+        if (send(s_sink_fd, frame, 16, 0) != 16) {
+            s_sink_errors++;
+            close(s_sink_fd);
+            s_sink_fd = -1;
+            vTaskDelay(pdMS_TO_TICKS(500));
+            continue;
+        }
+        s_sink_sent++;
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
 /* ---- public ------------------------------------------------------------ */
 
 static bool s_wifi_ready;
@@ -319,6 +465,8 @@ void netpad_wifi_start(void)
 
     xTaskCreate(tcp_task, "netpad_tcp", 4096, NULL, 4, NULL);
     xTaskCreate(udp_task, "netpad_udp", 4096, NULL, 3, NULL);
+    s_sink_lock = xSemaphoreCreateMutex();
+    xTaskCreate(sink_task, "netpad_sink", 4096, NULL, 3, NULL);
 
     if (!load_credentials(ssid, sizeof(ssid), pass, sizeof(pass))) {
         printf("[netpad] no Wi-Fi credentials yet — send: WIFI <ssid> <password>\n");
