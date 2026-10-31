@@ -3,12 +3,12 @@
 # No NeoPixel LED
 
 # 4MB flash
-CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 
 # Custom partition table for TinyUF2
 CONFIG_PARTITION_TABLE_CUSTOM=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_uf2.csv"
-CONFIG_PARTITION_TABLE_FILENAME="partitions_uf2.csv"
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_netpad_16mb.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions_netpad_16mb.csv"
 
 # Flash tool: don't reset before flash (device enters bootloader via CDC command)
 CONFIG_ESPTOOLPY_BEFORE_NORESET=y

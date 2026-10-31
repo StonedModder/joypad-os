@@ -1,0 +1,15 @@
+# Joypad ESP32-S3 — 16MB flash with two OTA slots.
+#
+# The rig lives with the console, the PC is in another room, so firmware has to
+# arrive over Wi-Fi: POST /ota writes the inactive slot and the bootloader rolls
+# back if the new image never confirms itself.
+#
+# nvs keeps its offset (0x9000) and size, so flashing a new partition table,
+# bootloader and app WITHOUT erasing leaves the stored Wi-Fi credentials intact.
+#
+# Name,      Type, SubType, Offset,    Size
+nvs,          data, nvs,     0x9000,    0x6000,
+otadata,      data, ota,     0xf000,    0x2000,
+ota_0,        app,  ota_0,   0x20000,   0x400000,
+ota_1,        app,  ota_1,   0x420000,  0x400000,
+coredump,     data, coredump,0x820000,  0x10000,

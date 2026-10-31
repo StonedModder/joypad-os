@@ -231,6 +231,7 @@ else()
         "${SHARED_SRC}/apps/bt2usb/app.c"
         "${SHARED_SRC}/netpad/netpad.c"
         "${SHARED_SRC}/netpad/netpad_wifi.c"
+        "${SHARED_SRC}/netpad/netpad_ota.c"
     )
     set(APP_INCLUDE_DIR "${SHARED_SRC}/apps/bt2usb")
     set(APP_NEEDS_BTSTACK ON)
@@ -491,6 +492,8 @@ set(ESP_REQUIRES
     esp_timer
     esp_hw_support
     esp_system
+    esp_http_server
+    app_update
 )
 
 if(APP_NEEDS_BTSTACK)

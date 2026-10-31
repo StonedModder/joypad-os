@@ -8,6 +8,7 @@
 #include <stdlib.h>
 
 #include "netpad.h"
+#include "netpad/netpad_ota.h"
 
 #if defined(ESP_PLATFORM)
 #include "esp_event.h"
@@ -75,6 +76,9 @@ static void on_got_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
     snprintf(s_ip, sizeof(s_ip), IPSTR, IP2STR(&ev->ip_info.ip));
     s_connected = true;
     printf("[netpad] Wi-Fi up, ip=%s — tcp %d, udp %d\n", s_ip, TCP_PORT, UDP_PORT);
+    /* The rig is in another room from the PC: expose the OTA uploader once the
+     * station has an address so firmware updates need no cable. */
+    netpad_ota_start();
 }
 
 static void retry_task(void *arg)
