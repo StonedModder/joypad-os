@@ -772,9 +772,13 @@ static uint8_t router_find_routes(const input_event_t* event, route_entry_t* mat
     for (uint8_t i = 0; i < MAX_ROUTES && match_count < max_matches; i++) {
         if (!routing_table[i].active) continue;
 
-        // Check if input source matches (wildcard = INPUT_SOURCE_USB_HOST)
-        if (routing_table[i].input != INPUT_SOURCE_USB_HOST) {
-            // TODO: Add other input sources (BLE, GPIO, etc.)
+        /* A wildcard-device route applies to every transport. The old filter
+         * dropped any route whose source was not USB_HOST, which silently
+         * discarded bt2usb's own BLE->USB route and the netpad injector's UART
+         * frames: input was accepted, then never published, so the USB device
+         * output stayed silent and the console saw an idle pipe. */
+        if (routing_table[i].input != INPUT_SOURCE_USB_HOST &&
+            routing_table[i].input_dev_addr != 0) {
             continue;
         }
 
